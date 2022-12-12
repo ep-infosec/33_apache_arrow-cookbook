@@ -1,0 +1,429 @@
+<!---
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Reading and Writing Data - Single Files
+
+## Introduction
+
+When reading files into R using Apache Arrow, you can read:
+
+* a single file into memory as a data frame or an Arrow Table
+* a single file that is too large to fit in memory as an Arrow Dataset
+* multiple and partitioned files as an Arrow Dataset
+
+This chapter contains recipes related to using Apache Arrow to read and 
+write single file data into memory as an Arrow Table. There are a number of circumstances in
+which you may want to read in single file data as an Arrow Table:
+
+* your data file is large and having performance issues
+* you want faster performance from your `dplyr` queries
+* you want to be able to take advantage of Arrow's compute functions
+
+If a single data file is too large to load into memory, you can use the Arrow Dataset API. 
+Recipes for using `open_dataset()` and `write_dataset()` are in the Reading and Writing Data - Multiple Files
+chapter.
+
+## Convert data from a data frame to an Arrow Table
+
+You want to convert an existing `data.frame` or `tibble` object into an Arrow Table.
+
+### Solution
+
+```{r, table_create_from_df}
+air_table <- arrow_table(airquality)
+air_table
+```
+```{r, test_table_create_from_df, opts.label = "test"}
+test_that("table_create_from_df chunk works as expected", {
+  expect_s3_class(air_table, "Table")
+})
+```
+
+## Convert data from an Arrow Table to a data frame
+
+You want to convert an Arrow Table to a data frame to view the data or work with it
+in your usual analytics pipeline. 
+
+### Solution
+
+```{r, asdf_table}
+air_df <- as.data.frame(air_table)
+air_df
+```
+```{r, test_asdf_table, opts.label = "test"}
+test_that("asdf_table chunk works as expected", {
+  expect_identical(air_df, airquality)
+})
+```
+
+### Discussion
+
+You can use either `as.data.frame()` or `dplyr::collect()` to do this.
+
+## Write a Parquet file
+
+You want to write a single Parquet file to disk.
+
+### Solution
+
+```{r, write_parquet}
+# Create table
+my_table <- arrow_table(data.frame(group = c("A", "B", "C"), score = c(99, 97, 99)))
+# Write to Parquet
+write_parquet(my_table, "my_table.parquet")
+```
+```{r, test_write_parquet, opts.label = "test"}
+test_that("write_parquet chunk works as expected", {
+  expect_true(file.exists("my_table.parquet"))
+})
+```
+ 
+## Read a Parquet file
+
+You want to read a single Parquet file into memory.
+
+### Solution
+
+```{r, read_parquet}
+parquet_tbl <- read_parquet("my_table.parquet")
+parquet_tbl
+```
+```{r, test_read_parquet, opts.label = "test"}
+test_that("read_parquet works as expected", {
+  expect_identical(parquet_tbl, data.frame(group = c("A", "B", "C"), score = c(99, 97, 99)))
+})
+```
+
+As the argument `as_data_frame` was left set to its default value of `TRUE`, the file was read in as a `data.frame` object.
+
+```{r, read_parquet_2}
+class(parquet_tbl)
+```
+```{r, test_read_parquet_2, opts.label = "test"}
+test_that("read_parquet_2 works as expected", {
+  expect_s3_class(parquet_tbl, "data.frame")
+})
+```
+
+### Discussion
+
+If you set `as_data_frame` to `FALSE`, the file will be read in as an Arrow Table.
+
+```{r, read_parquet_table}
+my_table_arrow <- read_parquet("my_table.parquet", as_data_frame = FALSE)
+my_table_arrow
+```
+
+
+```{r, read_parquet_table_class}
+class(my_table_arrow)
+```
+```{r, test_read_parquet_table_class, opts.label = "test"}
+test_that("read_parquet_table_class works as expected", {
+  expect_s3_class(my_table_arrow, "Table")
+})
+```
+
+## Read a Parquet file from S3 
+
+You want to read a single Parquet file from S3 into memory.
+
+### Solution
+
+```{r, read_parquet_s3, eval = FALSE}
+df <- read_parquet(file = "s3://voltrondata-labs-datasets/nyc-taxi/year=2019/month=6/part-0.parquet")
+```
+
+### See also
+
+For more in-depth instructions, including how to work with S3 buckets which require authentication, you can find a guide to reading and writing to/from S3 buckets here: https://arrow.apache.org/docs/r/articles/fs.html.
+
+## Filter columns while reading a Parquet file 
+
+You want to specify which columns to include when reading in a single Parquet file into memory.
+
+### Solution
+
+```{r, read_parquet_filter}
+# Create table to read back in
+dist_time <- arrow_table(data.frame(distance = c(12.2, 15.7, 14.2), time = c(43, 44, 40)))
+# Write to Parquet
+write_parquet(dist_time, "dist_time.parquet")
+
+# Read in only the "time" column
+time_only <- read_parquet("dist_time.parquet", col_select = "time")
+time_only
+```
+```{r, test_read_parquet_filter, opts.label = "test"}
+test_that("read_parquet_filter works as expected", {
+  expect_identical(time_only, data.frame(time = c(43, 44, 40)))
+})
+```
+
+## Write a Feather V2/Arrow IPC file
+
+You want to write a single Feather V2 file (also called Arrow IPC file).
+
+### Solution
+
+```{r, write_feather}
+my_table <- arrow_table(data.frame(group = c("A", "B", "C"), score = c(99, 97, 99)))
+write_feather(my_table, "my_table.arrow")
+```
+```{r, test_write_feather, opts.label = "test"}
+test_that("write_feather chunk works as expected", {
+  expect_true(file.exists("my_table.arrow"))
+})
+```
+### Discussion
+
+For legacy support, you can write data in the original Feather format by setting the `version` parameter to `1`.
+
+```{r, write_feather1}
+# Create table
+my_table <- arrow_table(data.frame(group = c("A", "B", "C"), score = c(99, 97, 99)))
+# Write to Feather format V1
+write_feather(mtcars, "my_table.feather", version = 1)
+```
+```{r, test_write_feather1, opts.label = "test"}
+test_that("write_feather1 chunk works as expected", {
+  expect_true(file.exists("my_table.feather"))
+})
+```
+
+## Read a Feather/Arrow IPC file
+
+You want to read a single Feather V1 or V2 file into memory (also called Arrow IPC file).
+
+### Solution
+
+```{r, read_feather}
+my_feather_tbl <- read_feather("my_table.arrow")
+```
+```{r, test_read_feather, opts.label = "test"}
+test_that("read_feather chunk works as expected", {
+  expect_identical(as.data.frame(my_feather_tbl), data.frame(group = c("A", "B", "C"), score = c(99, 97, 99)))
+})
+unlink("my_table.arrow")
+```
+
+## Write streaming Arrow IPC files
+
+You want to write to the Arrow IPC stream format.
+
+### Solution
+
+```{r, write_ipc_stream}
+# Create table
+my_table <- arrow_table(
+  data.frame(
+    group = c("A", "B", "C"),
+    score = c(99, 97, 99)
+    )
+)
+# Write to IPC stream format
+write_ipc_stream(my_table, "my_table.arrows")
+```
+```{r, test_write_ipc_stream, opts.label = "test"}
+test_that("write_ipc_stream chunk works as expected", {
+  expect_true(file.exists("my_table.arrows"))
+})
+```
+
+## Read streaming Arrow IPC files
+
+You want to read from the Arrow IPC stream format.
+
+### Solution
+```{r, read_ipc_stream}
+my_ipc_stream <- arrow::read_ipc_stream("my_table.arrows")
+```
+```{r, test_read_ipc_stream, opts.label = "test"}
+test_that("read_ipc_stream chunk works as expected", {
+  expect_equal(
+    my_ipc_stream,
+    data.frame(group = c("A", "B", "C"), score = c(99, 97, 99))
+  )
+})
+unlink("my_table.arrows")
+```
+
+## Write a CSV file 
+
+You want to write Arrow data to a single CSV file.
+
+### Solution
+
+```{r, write_csv_arrow}
+write_csv_arrow(cars, "cars.csv")
+```
+```{r, test_write_csv_arrow, opts.label = "test"}
+test_that("write_csv_arrow chunk works as expected", {
+  expect_true(file.exists("cars.csv"))
+})
+```
+
+## Read a CSV file
+
+You want to read a single CSV file into memory.
+
+### Solution
+
+```{r, read_csv_arrow}
+my_csv <- read_csv_arrow("cars.csv", as_data_frame = FALSE)
+```
+
+```{r, test_read_csv_arrow, opts.label = "test"}
+test_that("read_csv_arrow chunk works as expected", {
+  expect_equivalent(as.data.frame(my_csv), cars)
+})
+unlink("cars.csv")
+```
+
+## Read a JSON file
+
+You want to read a JSON file into memory.
+
+### Solution
+
+```{r, read_json_arrow}
+# Create a file to read back in
+tf <- tempfile()
+writeLines('
+    {"country": "United Kingdom", "code": "GB", "long": -3.44, "lat": 55.38}
+    {"country": "France", "code": "FR", "long": 2.21, "lat": 46.23}
+    {"country": "Germany", "code": "DE", "long": 10.45, "lat": 51.17}
+  ', tf, useBytes = TRUE)
+
+# Read in the data
+countries <- read_json_arrow(tf, col_select = c("country", "long", "lat"))
+countries
+```
+```{r, test_read_json_arrow, opts.label = "test"}
+test_that("read_json_arrow chunk works as expected", {
+  expect_equivalent(
+    countries,
+    data.frame(
+      country = c("United Kingdom", "France", "Germany"),
+      long = c(-3.44, 2.21, 10.45),
+      lat = c(55.38, 46.23, 51.17)
+    )
+  )
+})
+unlink(tf)
+```
+
+## Write a compressed single data file
+
+You want to save a single file, compressed with a specified compression algorithm.
+
+### Solution
+
+```{r, parquet_gzip}
+# Create a temporary directory
+td <- tempfile()
+dir.create(td)
+
+# Write data compressed with the gzip algorithm instead of the default
+write_parquet(iris, file.path(td, "iris.parquet"), compression = "gzip")
+```
+
+```{r, test_parquet_gzip, opts.label = "test"}
+test_that("parquet_gzip", {
+  expect_true(file.exists(file.path(td, "iris.parquet")))
+})
+```
+
+### See also
+
+Some formats write compressed data by default.  For more information 
+on the supported compression algorithms and default settings, see:
+
+* `?write_parquet()`
+* `?write_feather()`
+
+## Read compressed data
+
+You want to read in a single data file which has been compressed.
+
+### Solution
+
+```{r, read_parquet_compressed}
+# Create a temporary directory
+td <- tempfile()
+dir.create(td)
+
+# Write data which is to be read back in
+write_parquet(iris, file.path(td, "iris.parquet"), compression = "gzip")
+
+# Read in data
+ds <- read_parquet(file.path(td, "iris.parquet"))
+ds
+```
+
+```{r, test_read_parquet_compressed, opts.label = "test"}
+test_that("read_parquet_compressed", {
+  expect_s3_class(ds, "data.frame")
+  expect_named(
+    ds,
+    c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width", "Species")
+  )
+})
+```
+
+### Discussion
+
+Note that Arrow automatically detects the compression and you do not have to 
+supply it in the call to the `read_*()` or the `open_dataset()` functions.
+
+Although the CSV format does not support compression itself, Arrow supports 
+reading in CSV data which has been compressed, if the file extension is `.gz`.
+
+```{r, read_compressed_csv}
+# Create a temporary directory
+td <- tempfile()
+dir.create(td)
+
+# Write data which is to be read back in
+write.csv(iris, gzfile(file.path(td, "iris.csv.gz")), row.names = FALSE, quote = FALSE)
+
+# Read in data
+ds <- read_csv_arrow(file.path(td, "iris.csv.gz"))
+ds
+```
+
+```{r, test_read_compressed_csv, opts.label = "test"}
+test_that("read_compressed_csv", {
+  expect_s3_class(ds, "data.frame")
+  expect_named(
+    ds,
+    c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width", "Species")
+  )
+})
+```
+
+```{r cleanup_singlefiles, include = FALSE}
+# cleanup
+unlink("my_table.arrow")
+unlink("my_table.arrows")
+unlink("cars.csv")
+unlink("my_table.feather")
+unlink("my_table.parquet")
+unlink("dist_time.parquet")
+```
